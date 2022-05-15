@@ -73,16 +73,17 @@ impl Codec {
             } else {
                 let curr = triple.len + search_buf.len();
                 let next = curr + 1;
-                index = next;
                 if search_buf.len() == triple.len {
                     triple.offset = triple.len;
                 } else {
+                    // println!("curr={},index={},triple={:?} {}", curr, index, triple, input_len);
                     triple.offset = if next >= input_len {
-                        next - 1 - search_buf.len()
+                        triple.len
                     } else {
-                        next - search_buf.len()
-                    }
+                        next - index
+                    };
                 }
+                index = next;
             }
             encode_triple_vec.push(triple);
         }
@@ -134,12 +135,13 @@ mod tests {
     }
 
     #[test]
-    fn test_corner_case_decode() {
+    fn test_multi_encode_decode() {
         let raw_input_vec = vec![
             "a",
-            "01234567890",
+            "aaabbb",
+            "ababcbababaa",
+            "012345678999",
             "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            "abcdefghijklmnopqrstuvwxyz",
         ];
         for input in raw_input_vec {
             let input_str = input.to_string();
