@@ -1,5 +1,27 @@
 use crate::str_match::kmp_search;
 
+/// Some fields are redundant and are more for testing purposes.
+/// Record the position of each match and the position of the next start.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct MatchTable {
+    match_sequence: String,
+    match_range: (usize, usize),
+    first_match_index: i32,
+    curr_not_match: usize,
+    next_index: usize,
+    match_size: usize,
+}
+
+pub fn triple_offset(match_tables: &[MatchTable]) -> usize {
+    if match_tables.len() == 1 {
+        match_tables[0].match_range.1 - match_tables[0].first_match_index as usize
+    } else {
+        let match_table_len = match_tables.len();
+        let last = &match_tables[match_table_len - 1];
+        last.curr_not_match - last.match_size - last.first_match_index as usize
+    }
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct EncodeTriple {
     offset: usize,
@@ -35,16 +57,19 @@ impl Codec {
         Self { input_string }
     }
 
-    fn encode_triple(remain: String, search_pattern: String) -> EncodeTriple {
+    fn encode_triple(remain: String, search_pattern: String) -> (Option<MatchTable>, EncodeTriple) {
         let remain_vec = &remain.as_bytes().to_vec();
         let input_pattern = &search_pattern.as_bytes().to_vec();
         let mut match_sequence = Vec::new();
         let mut index = 0;
+        let mut match_index = -1;
         for item in remain_vec {
             match_sequence.push(*item);
             let index_of = kmp_search(input_pattern, &match_sequence);
             if index_of < 0 {
                 break;
+            } else {
+                match_index = index_of;
             }
             index += 1;
         }
@@ -52,11 +77,28 @@ impl Codec {
         let res = String::from_utf8_lossy(&match_sequence).to_string();
         let not_match_char = res.chars().last().unwrap();
         let len = if index == 0 { 0 } else { res.len() - 1 };
-        EncodeTriple {
-            offset: 0,
-            len,
-            char_value: not_match_char,
-        }
+        let start_index = search_pattern.len();
+        let match_table = if index > 0 {
+            let match_table = MatchTable {
+                match_sequence: res[0..res.len() - 1].to_string(),
+                match_range: (start_index, start_index + index - 1),
+                first_match_index: match_index,
+                curr_not_match: start_index + match_sequence.len() - 1,
+                next_index: start_index + match_sequence.len(),
+                match_size: match_sequence.len() - 1,
+            };
+            Some(match_table)
+        } else {
+            None
+        };
+        (
+            match_table,
+            EncodeTriple {
+                offset: 0,
+                len,
+                char_value: not_match_char,
+            },
+        )
     }
 
     pub fn default_encode(&self) -> Vec<EncodeTriple> {
@@ -64,10 +106,16 @@ impl Codec {
         let input_str = &self.input_string.as_bytes().to_vec();
         let input_len = input_str.len();
         let mut index = 0;
+        let mut match_table_vec = Vec::new();
         while index < input_len {
             let remain = &self.input_string[index..input_len];
             let search_buf = &self.input_string[0..index];
-            let mut triple = Codec::encode_triple(remain.to_string(), search_buf.to_string());
+            let triple_and_mtable =
+                Codec::encode_triple(remain.to_string(), search_buf.to_string());
+            let mut triple = triple_and_mtable.1;
+            if let Some(m_table) = triple_and_mtable.0 {
+                match_table_vec.push(m_table);
+            }
             if triple.len == 0 {
                 index += 1;
             } else {
@@ -76,12 +124,9 @@ impl Codec {
                 if search_buf.len() == triple.len {
                     triple.offset = triple.len;
                 } else {
-                    // println!("curr={},index={},triple={:?} {}", curr, index, triple, input_len);
-                    triple.offset = if next >= input_len {
-                        triple.len
-                    } else {
-                        next - index
-                    };
+                    triple.offset = triple_offset(&match_table_vec);
+                    // println!("match_table = {:#?}", match_table_vec);
+                    // println!("curr{},next={},triple={:?}", curr, next, triple);
                 }
                 index = next;
             }
@@ -112,6 +157,8 @@ impl Codec {
 #[cfg(test)]
 mod tests {
     use crate::codec::{Codec, EncodeTriple};
+    use rand::distributions::Alphanumeric;
+    use rand::Rng;
 
     const EXPECT_STR: &str = "ababcbababaa";
 
@@ -135,18 +182,37 @@ mod tests {
     }
 
     #[test]
+    fn test_rand_string_encode_decode() {
+        for _ in 0..5 {
+            let rand_str: String = rand::thread_rng()
+                .sample_iter(&Alphanumeric)
+                .take(13)
+                .map(char::from)
+                .collect();
+            println!("random_str = {:?}", rand_str);
+            let codec = Codec::new(rand_str.clone());
+            let encode_triple = codec.default_encode();
+            let decode_str = Codec::decode(&encode_triple);
+            println!("decode_str = {}", decode_str.clone());
+            assert_eq!(rand_str, decode_str);
+        }
+    }
+
+    #[test]
     fn test_multi_encode_decode() {
         let raw_input_vec = vec![
             "a",
             "aaabbb",
             "ababcbababaa",
-            "012345678999",
+            "0123456789999",
             "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
         ];
         for input in raw_input_vec {
             let input_str = input.to_string();
+            iter_str_idx(input_str.clone());
             let codec = Codec::new(input_str.clone());
             let codec_triple = codec.default_encode();
+            println!("code_triple = {:?}", codec_triple);
             let decode_str = Codec::decode(&codec_triple);
             println!("decode_str = {}", decode_str.clone());
             assert_eq!(input_str, decode_str.as_str());
@@ -178,7 +244,7 @@ mod tests {
                 char_value: 'a',
             },
             EncodeTriple {
-                offset: 2,
+                offset: 8,
                 len: 2,
                 char_value: 'a',
             },
@@ -190,6 +256,16 @@ mod tests {
         }
     }
 
+    fn iter_str_idx(str: String) {
+        let char_iter = str.chars();
+        let pairs: Vec<(char, usize)> = char_iter
+            .into_iter()
+            .enumerate()
+            .map(|pair| (pair.1, pair.0))
+            .collect();
+        println!("{:?}", pairs);
+    }
+
     #[test]
     fn test_decode() {
         let encode_vec = vec![
@@ -197,7 +273,7 @@ mod tests {
             (0, 0, 'b'),
             (2, 2, 'c'),
             (4, 3, 'a'),
-            (2, 2, 'a'),
+            (8, 2, 'a'),
         ];
         let encode_triple_vec: Vec<EncodeTriple> = encode_vec
             .iter()
