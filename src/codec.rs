@@ -12,16 +12,6 @@ pub struct MatchTable {
     match_size: usize,
 }
 
-pub fn triple_offset(match_tables: &[MatchTable]) -> usize {
-    if match_tables.len() == 1 {
-        match_tables[0].match_range.1 - match_tables[0].first_match_index as usize
-    } else {
-        let match_table_len = match_tables.len();
-        let last = &match_tables[match_table_len - 1];
-        last.curr_not_match - last.match_size - last.first_match_index as usize
-    }
-}
-
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct EncodeTriple {
     offset: usize,
@@ -79,15 +69,14 @@ impl Codec {
         let len = if index == 0 { 0 } else { res.len() - 1 };
         let start_index = search_pattern.len();
         let match_table = if index > 0 {
-            let match_table = MatchTable {
+            Some(MatchTable {
                 match_sequence: res[0..res.len() - 1].to_string(),
                 match_range: (start_index, start_index + index - 1),
                 first_match_index: match_index,
                 curr_not_match: start_index + match_sequence.len() - 1,
                 next_index: start_index + match_sequence.len(),
                 match_size: match_sequence.len() - 1,
-            };
-            Some(match_table)
+            })
         } else {
             None
         };
@@ -106,15 +95,15 @@ impl Codec {
         let input_str = &self.input_string.as_bytes().to_vec();
         let input_len = input_str.len();
         let mut index = 0;
-        let mut match_table_vec = Vec::new();
+        let mut match_tables = Vec::new();
         while index < input_len {
             let remain = &self.input_string[index..input_len];
             let search_buf = &self.input_string[0..index];
-            let triple_and_mtable =
+            let triple_and_match_tables =
                 Codec::encode_triple(remain.to_string(), search_buf.to_string());
-            let mut triple = triple_and_mtable.1;
-            if let Some(m_table) = triple_and_mtable.0 {
-                match_table_vec.push(m_table);
+            let mut triple = triple_and_match_tables.1;
+            if let Some(m_table) = triple_and_match_tables.0 {
+                match_tables.push(m_table);
             }
             if triple.len == 0 {
                 index += 1;
@@ -124,8 +113,10 @@ impl Codec {
                 if search_buf.len() == triple.len {
                     triple.offset = triple.len;
                 } else {
-                    triple.offset = triple_offset(&match_table_vec);
-                    // println!("match_table = {:#?}", match_table_vec);
+                    let last = match_tables.last().unwrap();
+                    triple.offset =
+                        last.curr_not_match - last.match_size - last.first_match_index as usize;
+                    // println!("match_table = {:#?}", match_tables);
                     // println!("curr{},next={},triple={:?}", curr, next, triple);
                 }
                 index = next;
@@ -183,13 +174,13 @@ mod tests {
 
     #[test]
     fn test_rand_string_encode_decode() {
-        for _ in 0..5 {
+        for _ in 0..1000 {
             let rand_str: String = rand::thread_rng()
                 .sample_iter(&Alphanumeric)
                 .take(13)
                 .map(char::from)
                 .collect();
-            println!("random_str = {:?}", rand_str);
+            println!("random_str = {}", rand_str);
             let codec = Codec::new(rand_str.clone());
             let encode_triple = codec.default_encode();
             let decode_str = Codec::decode(&encode_triple);
@@ -250,7 +241,6 @@ mod tests {
             },
         ];
         let codec_triple = codec.default_encode();
-        println!("triple_vec = {:?}", codec_triple);
         for (pos, triple) in codec_triple.iter().enumerate() {
             assert_eq!(triple.clone(), expect_codec_triple[pos]);
         }
