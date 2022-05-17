@@ -18,6 +18,6 @@ fn main() {
     }
     let codec = Codec::new(raw_string.clone());
     let encode_triple = codec.default_encode();
-    println!("encode_triple complete={:?}", encode_triple);
+    println!("encode_triple complete={:#?}", encode_triple);
     assert_eq!(raw_string, Codec::decode(&encode_triple));
 }
