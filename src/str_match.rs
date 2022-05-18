@@ -1,6 +1,6 @@
 /// KMP string matching, complexity is O(m+n)
 /// Returns the first matching position
-pub fn kmp_search(input: &[u8], pattern: &[u8]) -> i32 {
+pub fn kmp_search(input: &[char], pattern: &[char]) -> i32 {
     let m = pattern.len();
     if m == 0 {
         return 0;
@@ -37,7 +37,7 @@ pub fn kmp_search(input: &[u8], pattern: &[u8]) -> i32 {
 /// the pattern string is the main string and the prefix of the pattern string is the target string,
 /// once the string is matched successfully, then the current next value is the length of
 /// the successfully matched string.
-fn next(str: &[u8]) -> Vec<usize> {
+fn next(str: &[char]) -> Vec<usize> {
     let mut next_vec = vec![0_usize; str.len()];
     let mut i = 1;
     let mut j = 0;

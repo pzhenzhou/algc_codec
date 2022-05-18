@@ -1,7 +1,5 @@
 ## ALG-C Codec
 
-> Currently only ascii characters have been tested
-
 ### How to build
 
 The compile and build process relies on the cargo-make, which needs to be pre-installed
