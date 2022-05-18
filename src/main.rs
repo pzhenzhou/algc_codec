@@ -6,6 +6,8 @@ use clap::Parser;
 struct CmdArgs {
     #[clap(short, long)]
     input_string: String,
+    #[clap(short, long)]
+    search_buffer_size: Option<usize>,
 }
 
 fn main() {
@@ -17,7 +19,11 @@ fn main() {
         return;
     }
     let codec = Codec::new(raw_string.clone());
-    let encode_triple = codec.default_encode();
+    let encode_triple = if let Some(buffer_size) = args.search_buffer_size {
+        codec.default_encode(Some(buffer_size))
+    } else {
+        codec.default_encode(None)
+    };
     println!("encode_triple complete={:#?}", encode_triple);
     assert_eq!(raw_string, Codec::decode(&encode_triple));
 }

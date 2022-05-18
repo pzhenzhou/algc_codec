@@ -90,15 +90,21 @@ impl Codec {
         )
     }
 
-    pub fn default_encode(&self) -> Vec<EncodeTriple> {
+    pub fn default_encode(&self, search_window_size: Option<usize>) -> Vec<EncodeTriple> {
         let mut encode_triple_vec = Vec::new();
         let input_str = &self.input_string.as_bytes().to_vec();
         let input_len = input_str.len();
         let mut index = 0;
         let mut match_tables = Vec::new();
+
         while index < input_len {
             let remain = &self.input_string[index..input_len];
-            let search_buf = &self.input_string[0..index];
+            let mut search_buf = &self.input_string[0..index];
+            if let Some(buffer_size) = search_window_size {
+                if search_buf.len() > buffer_size {
+                    search_buf = &self.input_string[index - buffer_size..index];
+                }
+            }
             let triple_and_match_tables =
                 Codec::encode_triple(remain.to_string(), search_buf.to_string());
             let mut triple = triple_and_match_tables.1;
@@ -108,7 +114,7 @@ impl Codec {
             if triple.len == 0 {
                 index += 1;
             } else {
-                let curr = triple.len + search_buf.len();
+                let curr = triple.len + index;
                 let next = curr + 1;
                 if search_buf.len() == triple.len {
                     triple.offset = triple.len;
@@ -157,7 +163,7 @@ mod tests {
     fn test_encode_decode() {
         let input_str = "aaa";
         let codec = Codec::new(input_str.to_string());
-        let encode_triple = codec.default_encode();
+        let encode_triple = codec.default_encode(None);
         println!("encode_triple={:?}", encode_triple);
         let decode_str = Codec::decode(&encode_triple);
         println!("decode_res = {}", decode_str);
@@ -169,7 +175,7 @@ mod tests {
     fn test_emoji_panic() {
         let emoji_str = "💖💖";
         let codec = Codec::new(emoji_str.to_string());
-        codec.default_encode();
+        codec.default_encode(None);
     }
 
     #[test]
@@ -182,7 +188,7 @@ mod tests {
                 .collect();
             println!("random_str = {}", rand_str);
             let codec = Codec::new(rand_str.clone());
-            let encode_triple = codec.default_encode();
+            let encode_triple = codec.default_encode(Some(4));
             let decode_str = Codec::decode(&encode_triple);
             println!("decode_str = {}", decode_str.clone());
             assert_eq!(rand_str, decode_str);
@@ -195,6 +201,7 @@ mod tests {
             "a",
             "aaabbb",
             "ababcbababaa",
+            "ababcbababacbaaa",
             "0123456789999",
             "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
         ];
@@ -202,8 +209,8 @@ mod tests {
             let input_str = input.to_string();
             iter_str_idx(input_str.clone());
             let codec = Codec::new(input_str.clone());
-            let codec_triple = codec.default_encode();
-            println!("code_triple = {:?}", codec_triple);
+            let codec_triple = codec.default_encode(Some(3));
+            println!("code_triple = {:#?}", codec_triple);
             let decode_str = Codec::decode(&codec_triple);
             println!("decode_str = {}", decode_str.clone());
             assert_eq!(input_str, decode_str.as_str());
@@ -240,7 +247,7 @@ mod tests {
                 char_value: 'a',
             },
         ];
-        let codec_triple = codec.default_encode();
+        let codec_triple = codec.default_encode(None);
         for (pos, triple) in codec_triple.iter().enumerate() {
             assert_eq!(triple.clone(), expect_codec_triple[pos]);
         }

@@ -23,5 +23,5 @@ cargo make --makefile cargo-make.toml all-flow
 ```
 cargo build --release
 cd target/release
-./algc_codec --input-string "ababcbababaa"
+./algc_codec --input-string "ababcbababaa" --search-buffer-size 3
 ```
