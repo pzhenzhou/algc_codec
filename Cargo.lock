@@ -8,6 +8,7 @@ version = "0.1.0"
 dependencies = [
  "clap 3.1.18",
  "criterion",
+ "integer-encoding",
  "rand",
 ]
 
@@ -273,6 +274,12 @@ dependencies = [
  "autocfg",
  "hashbrown",
 ]
+
+[[package]]
+name = "integer-encoding"
+version = "3.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e85a1509a128c855368e135cffcde7eac17d8e1083f41e2b98c58bc1a5074be"
 
 [[package]]
 name = "itertools"

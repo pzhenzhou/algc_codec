@@ -1,5 +1,7 @@
-use algc_codec::codec::Codec;
+use algc_codec::codec::{Codec, Triple};
+use algc_codec::{algc_encode, codec, get_triple_value};
 use clap::Parser;
+use codec::TripleValues;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -18,12 +20,17 @@ fn main() {
         println!("The compressed string must not be empty");
         return;
     }
-    let codec = Codec::new(raw_string.clone());
-    let encode_triple = if let Some(buffer_size) = args.search_buffer_size {
-        codec.default_encode(Some(buffer_size))
+    let encode_triple: Vec<Triple> = if let Some(buffer_size) = args.search_buffer_size {
+        algc_encode!(raw_string.clone(), Some(buffer_size), |triple: Triple| {
+            triple
+        })
     } else {
-        codec.default_encode(None)
+        algc_encode!(raw_string.clone(), None, |triple: Triple| triple)
     };
     println!("encode_triple complete={:#?}", encode_triple);
-    assert_eq!(raw_string, Codec::decode(&encode_triple));
+    let triple_vec = TripleValues::TripleVec(encode_triple);
+    let decode_string = Codec::decode(triple_vec, |triple_value| {
+        get_triple_value!(triple_value, TripleVec)
+    });
+    assert_eq!(raw_string, decode_string);
 }
