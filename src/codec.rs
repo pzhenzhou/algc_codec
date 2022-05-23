@@ -222,6 +222,7 @@ mod tests {
     fn test_encode_decode_bytes() {
         let input_str = "aaabbbccc|$%678";
         let encode_triple = algc_encode!(input_str.to_string(), None, |triple| triple.into());
+        println!("encode_triple = {:?}", encode_triple);
         let decode_str = algc_decode!(encode_triple, |triple_binary: Vec<u8>| Triple::from(
             triple_binary
         ));
