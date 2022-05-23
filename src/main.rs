@@ -1,7 +1,6 @@
 use algc_codec::codec::{Codec, Triple};
-use algc_codec::{algc_encode, codec, get_triple_value};
+use algc_codec::{algc_decode, algc_encode};
 use clap::Parser;
-use codec::TripleValues;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -28,9 +27,6 @@ fn main() {
         algc_encode!(raw_string.clone(), None, |triple: Triple| triple)
     };
     println!("encode_triple complete={:#?}", encode_triple);
-    let triple_vec = TripleValues::TripleVec(encode_triple);
-    let decode_string = Codec::decode(triple_vec, |triple_value| {
-        get_triple_value!(triple_value, TripleVec)
-    });
+    let decode_string = algc_decode!(encode_triple, |triple| triple);
     assert_eq!(raw_string, decode_string);
 }

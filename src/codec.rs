@@ -4,29 +4,11 @@ use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
 
-type TripleBytes = Vec<u8>;
-
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Triple {
     offset: u32,
     len: u32,
     char_value: char,
-}
-
-pub enum TripleValues {
-    TripleVec(Vec<Triple>),
-    TripleBytes(Vec<TripleBytes>),
-}
-
-#[macro_export]
-macro_rules! get_triple_value {
-    ($input_triple_values:expr, $triple:ident) => {
-        if let TripleValues::$triple(v) = $input_triple_values {
-            v
-        } else {
-            vec![]
-        }
-    };
 }
 
 impl Triple {
@@ -54,13 +36,22 @@ macro_rules! algc_encode {
     };
 }
 
+#[macro_export]
+macro_rules! algc_decode {
+    ($encode_triples:expr, $process_func:expr) => {
+        Codec::decode($encode_triples, ($process_func))
+    };
+}
+
 impl From<Vec<u8>> for Triple {
     fn from(bytes: Vec<u8>) -> Self {
         let mut reader: &[u8] = bytes.as_ref();
-        let offset = reader.read_varint::<u32>().expect("");
-        let len = reader.read_varint::<u32>().expect("");
+        let offset = reader.read_varint::<u32>().expect("Found invalid u32");
+        let len = reader.read_varint::<u32>().expect("Found invalid u32");
         let mut char_dest: Vec<u8> = Vec::with_capacity(3);
-        reader.read_to_end(&mut char_dest).expect("");
+        reader
+            .read_to_end(&mut char_dest)
+            .expect("Found invalid character");
 
         let utf8_decode = String::from_utf8(char_dest).expect("Found invalid UTF-8");
         let char_value = utf8_decode.chars().last().unwrap();
@@ -96,7 +87,7 @@ impl Into<Vec<u8>> for Triple {
 pub struct Codec {}
 
 impl Codec {
-    pub fn encode_triple<F, T>(remain: &[char], search: &[char], convert_func: F) -> (usize, T)
+    fn encode_triple<F, T>(remain: &[char], search: &[char], convert_func: F) -> (usize, T)
     where
         F: Fn(Triple) -> T,
     {
@@ -171,14 +162,13 @@ impl Codec {
         encode_triple_vec
     }
 
-    /// FIXME: use closure improve performance (Iterate twice over the triple vec)
-    pub fn decode<F>(triple_values: TripleValues, encode_triple: F) -> String
+    pub fn decode<F, T>(encode_triple_vec: Vec<T>, convert_fn: F) -> String
     where
-        F: Fn(TripleValues) -> Vec<Triple>,
+        F: Fn(T) -> Triple,
     {
         let mut result = String::new();
-        let triples = encode_triple(triple_values);
-        for triple in triples {
+        for triple_value in encode_triple_vec {
+            let triple = convert_fn(triple_value);
             if let Some(v) = triple.no_traceback_return() {
                 result.push_str(v.to_string().as_str());
             } else {
@@ -217,15 +207,12 @@ pub fn load_test_data() -> Vec<String> {
 
 pub fn encode_decode_long_string(paragraph: String, window_size: usize) -> String {
     let encode_triple = algc_encode!(paragraph, Some(window_size), |triple: Triple| triple);
-    let triple_values = TripleValues::TripleVec(encode_triple);
-    Codec::decode(triple_values, |triple_value| {
-        get_triple_value!(triple_value, TripleVec)
-    })
+    algc_decode!(encode_triple, |triple| triple)
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::codec::{encode_decode_long_string, load_test_data, Codec, Triple, TripleValues};
+    use crate::codec::{encode_decode_long_string, load_test_data, Codec, Triple};
     use integer_encoding::{FixedInt, VarIntReader, VarIntWriter};
     use rand::distributions::Alphanumeric;
     use rand::Rng;
@@ -233,19 +220,11 @@ mod tests {
 
     #[test]
     fn test_encode_decode_bytes() {
-        let input_str = "aaabbbccc|adsf";
+        let input_str = "aaabbbccc|$%678";
         let encode_triple = algc_encode!(input_str.to_string(), None, |triple| triple.into());
-
-        let values = TripleValues::TripleBytes(encode_triple);
-
-        let decode_str = Codec::decode(values, |input_triple| {
-            let triple_bytes = get_triple_value!(input_triple, TripleBytes);
-            let triple_values = triple_bytes
-                .iter()
-                .map(|triple_bytes| Triple::from(triple_bytes.clone()))
-                .collect::<Vec<_>>();
-            triple_values
-        });
+        let decode_str = algc_decode!(encode_triple, |triple_binary: Vec<u8>| Triple::from(
+            triple_binary
+        ));
         println!(
             "input_string = {}, decode_string = {}",
             input_str, decode_str
@@ -258,9 +237,7 @@ mod tests {
         let input_str = "aaa";
         let encode_triple = algc_encode!(input_str.to_string(), None, |triple| triple);
         println!("encode_triple={:?}", encode_triple);
-        let decode_str = Codec::decode(TripleValues::TripleVec(encode_triple), |triple_value| {
-            get_triple_value!(triple_value, TripleVec)
-        });
+        let decode_str = Codec::decode(encode_triple, |triple_value| triple_value);
         println!("decode_res = {}", decode_str);
         assert_eq!(decode_str, input_str);
     }
@@ -270,10 +247,7 @@ mod tests {
         let emoji_str = "😓👌🏻👌🏻😭😭😁😁👌🏻";
         println!("input_emoji={:?}", emoji_str);
         let encode_triple = algc_encode!(emoji_str.to_string(), None, |triple| triple);
-        let decode_emoji_str =
-            Codec::decode(TripleValues::TripleVec(encode_triple), |triple_value| {
-                get_triple_value!(triple_value, TripleVec)
-            });
+        let decode_emoji_str = Codec::decode(encode_triple, |triple_value| triple_value);
         println!("decode_emoji={:?}", decode_emoji_str);
         assert_eq!(emoji_str, decode_emoji_str);
     }
@@ -307,10 +281,7 @@ mod tests {
                 .collect();
             println!("random_str = {}", rand_str);
             let encode_triple = algc_encode!(rand_str.clone(), Some(4), |triple| triple);
-            let decode_str =
-                Codec::decode(TripleValues::TripleVec(encode_triple), |triple_value| {
-                    get_triple_value!(triple_value, TripleVec)
-                });
+            let decode_str = Codec::decode(encode_triple, |triple_value| triple_value);
             println!("decode_str = {}", decode_str.clone());
             assert_eq!(rand_str, decode_str);
         }
@@ -326,10 +297,7 @@ mod tests {
         function in the source code; we could have defined it before as well. Rust doesnt
         care where you define your functions, only that theyre defined somewhere."##;
         let codec_triple = algc_encode!(paragraph.to_string(), Some(10), |triple| triple);
-        let triple_values = TripleValues::TripleVec(codec_triple);
-        let decode_str = Codec::decode(triple_values, |triple_value| {
-            get_triple_value!(triple_value, TripleVec)
-        });
+        let decode_str = Codec::decode(codec_triple, |triple_vec| triple_vec);
         assert_eq!(paragraph.to_string(), decode_str);
     }
 
@@ -348,9 +316,7 @@ mod tests {
             iter_str_idx(input_str.clone());
             let codec_triple = algc_encode!(input_str.clone(), Some(3), |triple| triple);
             println!("code_triple = {:#?}", codec_triple);
-            let decode_str = Codec::decode(TripleValues::TripleVec(codec_triple), |triple_value| {
-                get_triple_value!(triple_value, TripleVec)
-            });
+            let decode_str = Codec::decode(codec_triple, |triple_vec| triple_vec);
             println!("decode_str = {}", decode_str.clone());
             assert_eq!(input_str, decode_str.as_str());
         }
@@ -410,7 +376,7 @@ mod tests {
             (4, 3, 'a'),
             (8, 2, 'a'),
         ];
-        let encode_triple_vec: Vec<Triple> = encode_vec
+        let triple_values: Vec<Triple> = encode_vec
             .iter()
             .map(|tuple| Triple {
                 offset: tuple.0,
@@ -418,10 +384,7 @@ mod tests {
                 char_value: tuple.2,
             })
             .collect();
-        let triple_values = TripleValues::TripleVec(encode_triple_vec);
-        let raw_str = Codec::decode(triple_values, |triple_value| {
-            get_triple_value!(triple_value, TripleVec)
-        });
+        let raw_str = Codec::decode(triple_values, |triple_vec| triple_vec);
         println!("raw_str = {:?}", raw_str);
         assert_eq!("ababcbababaa", raw_str);
     }
